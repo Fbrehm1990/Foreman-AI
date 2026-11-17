@@ -7,6 +7,8 @@ import json
 import os
 import re
 import sys
+import threading
+import time
 import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -172,6 +174,7 @@ def state():
         "approvals": read_approvals(),
         "progress": read_status(),
         "history": read_history(),
+        "dispatch": DISPATCH,
         "stats": {
             "queued": sum(t["state"] == "queued" for t in tasks),
             "running": sum(t["state"] == "running" for t in tasks),
@@ -458,18 +461,53 @@ def edit_task(body, action):
     write(INBOX, "\n".join(lines) + "\n")
 
 
-def kick_dispatch():
-    """Start the team right away if work is waiting (needs the Claude Code CLI; otherwise the 30-min check does it)."""
-    import threading
+# Auto-start: tasks begin as soon as they're added. kick_dispatch() runs on every new task, and auto_start()
+# re-checks every 20 seconds, so work added while the team is busy, or left over after a run, starts at once.
+DISPATCH = {"state": "IDLE", "why": "", "at": None, "runs": 0, "recovered": 0}
+_dispatch_lock = threading.Lock()
+_backoff_until = 0.0
 
-    def go():
-        try:
-            import dispatch
-            state, why = dispatch.start()
-            print(f"dispatch: {state}: {why}", flush=True)
-        except Exception as e:  # never let a failed launch break the dashboard
-            print(f"dispatch failed: {e}", flush=True)
-    threading.Thread(target=go, daemon=True).start()
+
+def run_dispatch():
+    """One check: put back tasks a crashed run left behind, then start a run if work is waiting."""
+    global _backoff_until
+    if not _dispatch_lock.acquire(blocking=False):      # a check is already launching a run
+        return
+    try:
+        import dispatch
+        fixed = dispatch.recover()
+        if fixed:
+            print(f"dispatch: put {fixed} stuck task(s) back in the queue", flush=True)
+            DISPATCH["recovered"] += fixed
+        if time.time() < _backoff_until and fixed == 0:
+            DISPATCH["runs"] = len(dispatch._runs())
+            return
+        state_, why = dispatch.start()
+        if (state_, why) != (DISPATCH["state"], DISPATCH["why"]) and state_ != "IDLE":
+            print(f"dispatch: {state_}: {why}", flush=True)
+        DISPATCH.update(state=state_, why=why, at=datetime.now().isoformat(timespec="seconds"), runs=len(dispatch._runs()))
+        # Can't launch: CLI missing or signed out -> retry in 2 minutes; a launch that died at once -> in 30 s.
+        _backoff_until = time.time() + (120 if state_ == "NO_CLI" else 30 if state_ == "FAILED" else 0)
+    except Exception as e:  # never let a failed launch break the dashboard
+        DISPATCH.update(state="FAILED", why=f"{e.__class__.__name__}: {e}"[:200], at=datetime.now().isoformat(timespec="seconds"))
+        print(f"dispatch failed: {e}", flush=True)
+    finally:
+        _dispatch_lock.release()
+
+
+def kick_dispatch():
+    """Start the team right away (in the background, so adding a task stays instant)."""
+    global _backoff_until
+    _backoff_until = 0                                   # a new task always gets a fresh try
+    threading.Thread(target=run_dispatch, daemon=True).start()
+
+
+def auto_start(every=20):
+    def loop():
+        while True:
+            time.sleep(every)
+            run_dispatch()
+    threading.Thread(target=loop, daemon=True).start()
 
 
 def read_approvals():
@@ -752,6 +790,8 @@ if __name__ == "__main__":
         open_ui(url)
         sys.exit(0)
     print(f"Foreman AI dashboard: {url}  (Ctrl+C to stop)")
+    auto_start()                                         # queued tasks start right away, and keep starting
+    kick_dispatch()
     if "--no-browser" not in sys.argv:
         open_ui(url)
     try:

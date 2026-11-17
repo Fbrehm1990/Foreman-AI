@@ -22,6 +22,8 @@ tasks/approvals.lock
 tasks/approvals.tmp
 tasks/requests/
 tasks/dispatch.lock
+tasks/dispatch-runs.json
+tasks/dispatch-retries.json
 tasks/history.jsonl
 tasks/hub.json
 tasks/homeassistant.json
