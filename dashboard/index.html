@@ -254,6 +254,37 @@ tr.click:hover td{background:var(--surface-2)}
 .typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
 @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-4px);opacity:1}}
 
+/* chat with one agent */
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.cscrim{position:fixed;inset:0;background:rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .2s;z-index:42}
+.cdrawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:rgba(8,12,24,.98);border-left:1px solid var(--border-hi);box-shadow:-20px 0 60px rgba(0,0,0,.5);transform:translateX(100%);transition:transform .22s ease;z-index:43;display:flex;flex-direction:column}
+#chatbox.on .cscrim{opacity:1;pointer-events:auto}
+#chatbox.on .cdrawer{transform:none}
+.chat-h{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)}
+.chat-h .face{width:48px;height:48px;flex:none}
+.chat-h .who{flex:1;min-width:0}
+.chat-h .who b{display:block;font-size:16px}
+.chat-h .who span{display:block;color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-log{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+.chat-empty{margin:auto;text-align:center;color:var(--muted);max-width:340px;line-height:1.6}
+.chat-empty .chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:12px}
+.chat-empty .chips button{border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:999px;padding:6px 11px;cursor:pointer;font-size:12.5px}
+.chat-empty .chips button:hover{border-color:var(--c)}
+.msg{max-width:86%;padding:9px 13px;border-radius:14px;line-height:1.55;overflow-wrap:anywhere}
+.msg.you{align-self:flex-end;background:var(--accent);color:var(--accent-ink);border-bottom-right-radius:4px;white-space:pre-wrap}
+.msg.agent{align-self:flex-start;background:var(--surface-2);border:1px solid var(--border);border-left:3px solid var(--c);border-bottom-left-radius:4px}
+.msg.agent p{margin:0 0 8px}.msg.agent p:last-child{margin:0}.msg.agent ul,.msg.agent ol{margin:4px 0 8px;padding-left:20px}
+.msg.error{align-self:center;background:var(--danger-soft);color:var(--danger);font-size:13px;max-width:94%}
+.msg .t{display:block;font-size:11px;opacity:.6;margin-top:4px}
+.msg.typing{display:flex;gap:4px;align-items:center;padding:12px 14px}
+.msg.typing i{width:6px;height:6px;border-radius:50%;background:var(--c);animation:bounce 1.2s infinite}
+.msg.typing i:nth-child(2){animation-delay:.15s}.msg.typing i:nth-child(3){animation-delay:.3s}
+.msg.typing em{font-style:normal;color:var(--muted);font-size:12.5px;margin-left:6px}
+.chat-form{display:flex;gap:8px;align-items:flex-end;padding:12px 16px 16px;border-top:1px solid var(--border)}
+.chat-form textarea{min-height:44px;max-height:160px;resize:none;flex:1}
+.chat-note{padding:0 16px 10px;color:var(--muted);font-size:11.5px}
+.mate .chat-btn{margin-left:auto;margin-right:26px}
+
 /* drawer viewer */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .2s;z-index:40}
 .drawer{position:fixed;top:0;right:0;bottom:0;width:min(860px,100%);background:var(--surface);border-left:1px solid var(--border);transform:translateX(100%);transition:transform .22s ease;z-index:41;display:flex;flex-direction:column}
@@ -1146,6 +1177,19 @@ a.ib-item:hover{background:var(--surface-2)}
     <div class="drawer-b"><div class="md" id="vBody"></div></div>
   </aside>
 </div>
+<div id="chatbox">
+  <div class="cscrim" data-chat-close></div>
+  <aside class="cdrawer" role="dialog" aria-modal="true" aria-labelledby="chatWho">
+    <div class="chat-h" id="chatHead"></div>
+    <div class="chat-log" id="chatLog" aria-live="polite"></div>
+    <form class="chat-form" id="chatForm">
+      <label class="sr" for="chatIn">Message</label>
+      <textarea id="chatIn" rows="1" placeholder="Message…"></textarea>
+      <button class="btn primary" id="chatSend" type="submit">Send</button>
+    </form>
+    <div class="chat-note">Enter to send · Shift+Enter for a new line. Real work becomes a task that starts right away.</div>
+  </aside>
+</div>
 <div id="tip" class="hidden"></div>
 <div class="toast" id="toast"></div>
 
@@ -1903,21 +1947,101 @@ function renderTeamStrip(){
     const waiting = S.tasks.filter(t => a.types.includes(t.type)).length;
     const tag = now ? `Working${now.label ? " · " + now.label : ""}` : waiting ? `${waiting} queued` : "Standing by";
     const line = now ? now.title : waiting ? "Starting shortly" : "Nothing in progress";
-    return `<button type="button" class="bot ${now ? "busy" : ""}" style="--c:var(${a.color})" data-goto="${esc(a.name)}" title="Open ${esc(a.name)} on the Crew page">
+    return `<button type="button" class="bot ${now ? "busy" : ""}" style="--c:var(${a.color})" data-chat="${a.key}" title="Chat with ${esc(a.name)}">
       ${faceSVG(a, !!now)}
       <span class="bt"><span class="bn">${esc(a.name)}</span><span class="bc">${esc(tag)}</span><span class="bs">${esc(line)}</span></span>
     </button>`;
   }).join("");
 }
-$("#teamStrip").addEventListener("click", e => {
-  const b = e.target.closest("[data-goto]"); if (!b) return;
-  const name = b.dataset.goto;
+function gotoCrew(name){
   location.hash = "#/crew";
   setTimeout(() => {
     const c = [...document.querySelectorAll("#crew [data-agent]")].find(x => x.dataset.agent === name);
     c?.scrollIntoView({behavior: "smooth", block: "start"});
   }, 80);
+}
+
+// ---------------------------------------------------------------- Chat with one agent
+// Click a robot (or Chat on a Crew card) to talk to that agent. It answers as itself through Claude Code on this
+// PC; anything that's real work it turns into a task for itself, which starts right away.
+const CHAT = {key: null, cache: {}, sending: {}};
+const CHAT_IDEAS = {
+  manager:      ["What's the plan for today?", "What's blocked and why?", "What should we focus on this week?"],
+  researcher:   ["What have you found lately?", "Find 5 local businesses with no website", "Which leads look best?"],
+  "web-builder":["Which demo sites are ready?", "What would you improve on my site?", "Build a demo site for a local barber"],
+  marketer:     ["Draft 3 Instagram posts for this week", "What's waiting for my approval?", "Write a follow-up email to a lead"],
+};
+const chatAgent = () => AGENTS.find(a => a.key === CHAT.key);
+function chatHead(){
+  const a = chatAgent(); if (!a) return;
+  const now = liveTasks().find(t => a.types.includes(t.type));
+  $("#chatbox .cdrawer").style.setProperty("--c", `var(${a.color})`);
+  $("#chatHead").innerHTML = `${faceSVG(a, !!now || !!CHAT.sending[a.key])}
+    <div class="who"><b id="chatWho">${esc(a.name)}</b><span>${esc(a.role)} · ${esc(now ? "Working on " + now.title : "Standing by")}</span></div>
+    <button class="btn sm ghost" type="button" data-chat-crew title="See ${esc(a.name)}'s tasks">Tasks</button>
+    <button class="btn sm ghost" type="button" data-chat-clear title="Start a new conversation">Clear</button>
+    <button class="btn sm ghost" type="button" data-chat-close aria-label="Close">✕</button>`;
+}
+function chatTime(at){ try { return new Date(at).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"}); } catch { return ""; } }
+function renderChatLog(){
+  const a = chatAgent(); if (!a) return;
+  const d = CHAT.cache[a.key], log = $("#chatLog"), msgs = d?.messages || [];
+  const stick = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+  log.innerHTML = !d ? `<div class="chat-empty">Loading…</div>`
+    : !msgs.length && !CHAT.sending[a.key] ? `<div class="chat-empty">Talk to ${esc(a.name)} directly: ask about its work, give it direction, or hand it a job.
+        <div class="chips">${(CHAT_IDEAS[a.key] || []).map(q => `<button type="button" data-chat-idea>${esc(q)}</button>`).join("")}</div></div>`
+    : msgs.map(m => m.role === "you" ? `<div class="msg you">${esc(m.text)}<span class="t">${esc(chatTime(m.at))}</span></div>`
+        : m.role === "error" ? `<div class="msg error">${esc(m.text)}</div>`
+        : `<div class="msg agent">${mdInline(m.text)}<span class="t">${esc(a.name)} · ${esc(chatTime(m.at))}</span></div>`).join("")
+      + (CHAT.sending[a.key] ? `<div class="msg typing" aria-label="${esc(a.name)} is typing"><i></i><i></i><i></i><em>${esc(a.name)} is thinking…</em></div>` : "");
+  if (stick || CHAT.sending[a.key]) log.scrollTop = log.scrollHeight;
+}
+async function openChat(key){
+  CHAT.key = key;
+  const a = chatAgent(); if (!a) return;
+  $("#chatIn").placeholder = `Message ${a.name}…`;
+  $("#chatbox").classList.add("on");
+  chatHead(); renderChatLog();
+  setTimeout(() => $("#chatIn").focus(), 60);
+  try { CHAT.cache[key] = await fetch(`/api/agent-chat?agent=${encodeURIComponent(key)}`).then(r => r.json()); }
+  catch { CHAT.cache[key] = CHAT.cache[key] || {messages: []}; }
+  if (CHAT.key === key){ renderChatLog(); $("#chatLog").scrollTop = 1e9; }
+}
+function closeChat(){ $("#chatbox").classList.remove("on"); CHAT.key = null; }
+async function sendChat(text){
+  const a = chatAgent(); text = text.trim();
+  if (!a || !text || CHAT.sending[a.key]) return;
+  const key = a.key, d = CHAT.cache[key] = CHAT.cache[key] || {messages: []};
+  d.messages = [...(d.messages || []), {role: "you", text, at: new Date().toISOString()}];
+  CHAT.sending[key] = true; $("#chatIn").value = ""; autoGrow();
+  if (CHAT.key === key){ chatHead(); renderChatLog(); }
+  try {
+    CHAT.cache[key] = await api("/api/agent-chat", {agent: key, text});
+    load();                                              // a new task may have been queued
+  } catch (e) {
+    d.messages = [...d.messages, {role: "error", text: e.message}];
+    if (CHAT.key !== key) toast(`${a.name}: ${e.message}`);
+  }
+  CHAT.sending[key] = false;
+  if (CHAT.key === key){ chatHead(); renderChatLog(); }
+  else toast(`${a.name} replied. Click its robot to read it.`);
+}
+function autoGrow(){ const t = $("#chatIn"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 160) + "px"; }
+$("#chatForm").addEventListener("submit", e => { e.preventDefault(); sendChat($("#chatIn").value); });
+$("#chatIn").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing){ e.preventDefault(); sendChat($("#chatIn").value); } });
+$("#chatIn").addEventListener("input", autoGrow);
+$("#chatbox").addEventListener("click", async e => {
+  if (e.target.closest("[data-chat-close]")) return closeChat();
+  const idea = e.target.closest("[data-chat-idea]"); if (idea) return sendChat(idea.textContent);
+  if (e.target.closest("[data-chat-crew]")){ const n = chatAgent()?.name; closeChat(); return gotoCrew(n); }
+  if (e.target.closest("[data-chat-clear]")){
+    const a = chatAgent(); if (!a || CHAT.sending[a.key]) return;
+    if (!confirm(`Start a new conversation with ${a.name}? This clears the chat history.`)) return;
+    try { CHAT.cache[a.key] = await api("/api/agent-chat/clear", {agent: a.key}); renderChatLog(); } catch (err) { toast(err.message); }
+  }
 });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && CHAT.key) closeChat(); });
+document.addEventListener("click", e => { const b = e.target.closest("[data-chat]"); if (b) openChat(b.dataset.chat); });
 
 function renderCrew(){
   if (fbOpen) return;                                   // don't wipe a feedback note while it's being written
@@ -1941,7 +2065,8 @@ function renderCrew(){
     return `<article class="mate ${busy ? "busy" : ""}" style="--c:var(${a.color})" data-agent="${esc(a.name)}">
       <span class="ord">0${i + 1}</span>
       <div class="hd">${faceSVG(a, busy)}
-        <div><h3>${esc(a.name)}</h3><div class="role">${esc(a.role)}</div></div></div>
+        <div><h3>${esc(a.name)}</h3><div class="role">${esc(a.role)}</div></div>
+        <button type="button" class="btn sm chat-btn" data-chat="${a.key}" title="Chat with ${esc(a.name)}">Chat</button></div>
       <div class="state ${busy ? "on" : ""}"><span class="pulse ${busy ? "working" : ""}"></span>${busy ? esc(active.find(x => x.on).title) : active.length ? `${active.length} task${active.length > 1 ? "s" : ""} about to start` : "Standing by"}</div>
       <div class="tabs2" role="tablist">
         <button role="tab" data-crewtab="active" aria-selected="${tab === "active"}">Active · ${active.length}</button>

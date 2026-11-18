@@ -165,7 +165,8 @@ def submit(a):
         if ns.type == "auto" and ns.by != OWNER:
             raise SystemExit("team: route the task to a real type (research, web, marketing, code, brief, docs)")
         if ns.by == OWNER:   # owner's own request: same as adding it on the dashboard; the team routes it
-            server.add_task({"type": ns.type, "priority": ns.priority, "title": ns.title, "details": ns.details})
+            server.add_task({"type": ns.type, "priority": ns.priority, "title": ns.title, "details": ns.details,
+                             "summary": getattr(ns, "summary", "") or ""})
             print(json.dumps({"added": ns.title, "type": ns.type, "by": OWNER}))
             path.unlink()
             try:

@@ -407,6 +407,110 @@ def _ask_claude(body, text, address, ctx):
     return {"reply": str(data.get("result") or "").strip(), "session": data.get("session_id", "")}
 
 
+# ---------------------------------------------------------------- talk to one agent directly
+# The owner can chat with each robot on the dashboard. The agent answers as itself (its .claude/agents/<key>.md
+# instructions plus prompts/agent-chat.md); real work becomes a task assigned to it, which starts at once.
+CHAT_AGENTS = {
+    "manager":     {"name": "Manager",     "role": "operations lead",          "type": "auto",
+                    "types_note": " Use type \"auto\" for anything the team should do, so you can route it on your next run."},
+    "researcher":  {"name": "Researcher",  "role": "research and leads",       "type": "research",
+                    "types_note": " Use \"brief\" for a news brief and \"docs\" for documents or data files."},
+    "web-builder": {"name": "Web builder", "role": "websites, code and testing", "type": "web",
+                    "types_note": " Use \"code\" for a change to an existing repo and \"test\" for testing or an audit."},
+    "marketer":    {"name": "Marketer",    "role": "social, ads and email",    "type": "marketing", "types_note": ""},
+}
+CHATS = ROOT / "tasks" / "chats"
+CHAT_MODEL = os.environ.get("AIWF_CHAT_MODEL", "sonnet")
+_chat_locks = {k: threading.Lock() for k in CHAT_AGENTS}
+
+
+def _chat_file(key):
+    if key not in CHAT_AGENTS:
+        raise ValueError("unknown agent")
+    return CHATS / f"{key}.json"
+
+
+def chat_load(key):
+    try:
+        data = json.loads(_chat_file(key).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        data = {}
+    return {"agent": key, "messages": data.get("messages", []), "session": data.get("session", ""),
+            "busy": _chat_locks[key].locked()}
+
+
+def _chat_save(key, messages, session):
+    CHATS.mkdir(parents=True, exist_ok=True)
+    tmp = _chat_file(key).with_suffix(".tmp")
+    tmp.write_text(json.dumps({"messages": messages[-80:], "session": session}, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(_chat_file(key))
+
+
+def chat_clear(key):
+    _chat_file(key).unlink(missing_ok=True)
+    return chat_load(key)
+
+
+def _agent_persona(key):
+    """The agent's own instructions (without the frontmatter) plus the chat rules."""
+    a = CHAT_AGENTS[key]
+    body = read(ROOT / ".claude" / "agents" / f"{key}.md")
+    if body.startswith("---"):
+        body = body.split("---", 2)[2]
+    chat = (HERE / "prompts" / "agent-chat.md").read_text(encoding="utf-8")
+    for k, v in (("name", a["name"]), ("role", a["role"]), ("key", key), ("type", a["type"]), ("types_note", a["types_note"])):
+        chat = chat.replace("{" + k + "}", v)
+    return body.strip() + chat + f"\n\nRight now it is {datetime.now():%A, %B %d, %Y, %I:%M %p} local time."
+
+
+def chat_send(body):
+    """One turn of the owner's chat with an agent. Runs Claude Code in the workflow folder as that agent."""
+    import subprocess
+    import dispatch
+    key = str(body.get("agent") or "")
+    text = str(body.get("text") or "").strip()[:4000]
+    _chat_file(key)
+    if not text:
+        raise ValueError("Type a message first")
+    exe = dispatch.cli_path()
+    if not exe:
+        raise ValueError("Claude Code isn't installed on this PC, so the team can't chat yet")
+    if not _chat_locks[key].acquire(blocking=False):
+        raise ValueError(f"{CHAT_AGENTS[key]['name']} is still answering your last message")
+    try:
+        cur = chat_load(key)
+        messages, session = cur["messages"], cur["session"]
+        messages.append({"role": "you", "text": text, "at": datetime.now().isoformat(timespec="seconds")})
+        _chat_save(key, messages, session)          # the owner's message shows even if the answer fails
+        cmd = [exe, "-p", text, "--output-format", "json", "--model", CHAT_MODEL,
+               "--append-system-prompt", _agent_persona(key), "--disallowedTools", "Agent"]
+        if re.fullmatch(r"[0-9a-f-]{36}", session or ""):
+            cmd += ["--resume", session]
+        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        reply, err = "", None
+        try:
+            out = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, encoding="utf-8",
+                                 timeout=240, stdin=subprocess.DEVNULL, creationflags=flags)
+            data = json.loads(out.stdout.strip().splitlines()[-1])
+            if data.get("is_error"):
+                err = str(data.get("result") or "Claude couldn't answer that.")[:300]
+            else:
+                reply, session = str(data.get("result") or "").strip(), data.get("session_id", session)
+        except subprocess.TimeoutExpired:
+            err = "That took too long to answer. Ask something shorter, or ask me to make it a task."
+        except (json.JSONDecodeError, IndexError):
+            err = "No answer came back. Check that Claude Code is signed in on this PC (run claude in Command Prompt)."
+        if err:
+            messages.append({"role": "error", "text": err, "at": datetime.now().isoformat(timespec="seconds")})
+        else:
+            messages.append({"role": "agent", "text": reply or "(no reply)", "at": datetime.now().isoformat(timespec="seconds")})
+        _chat_save(key, messages, session)
+        kick_dispatch()                              # if the agent queued a task, make sure it starts now
+    finally:
+        _chat_locks[key].release()
+    return chat_load(key)
+
+
 def read_history(limit=400):
     out = []
     for ln in read(HISTORY).splitlines()[-limit:]:
@@ -610,6 +714,8 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/ai":
                 import models
                 return self._send(200, models.status())
+            if u.path == "/api/agent-chat":
+                return self._send(200, chat_load(parse_qs(u.query).get("agent", [""])[0]))
             if u.path == "/api/usage":
                 import usage
                 return self._send(200, usage.status())
@@ -688,6 +794,10 @@ class Handler(BaseHTTPRequestHandler):
             elif route == "/api/ai":
                 import models
                 return self._send(200, models.update(body))
+            elif route == "/api/agent-chat":
+                return self._send(200, chat_send(body))
+            elif route == "/api/agent-chat/clear":
+                return self._send(200, chat_clear(str(body.get("agent") or "")))
             elif route == "/api/usage":
                 import usage
                 return self._send(200, usage.update(body))

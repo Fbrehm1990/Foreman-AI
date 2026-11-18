@@ -34,3 +34,4 @@ tasks/claude_limits.json
 tasks/claude_limits.tmp
 tasks/connections.json
 tasks/connections.tmp
+tasks/chats/
