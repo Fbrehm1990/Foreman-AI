@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import feed  # noqa: E402
+import progress  # noqa: E402
 
 PORT = int(os.environ.get("AIWF_PORT", "8765"))
 ROOT = Path(__file__).resolve().parent.parent
@@ -151,8 +152,10 @@ def list_logs():
 
 
 def read_status():
+    """Live progress. Each run has its own record under "runs"; the top-level run/tasks/heartbeat are summed
+    over the runs still working (re-checked here, so a run whose process has stopped drops out at once)."""
     try:
-        return json.loads(read(STATUS) or "null")
+        return progress.summarize(json.loads(read(STATUS) or "null"))
     except json.JSONDecodeError:  # mid-write; the next poll will catch it
         return None
 
