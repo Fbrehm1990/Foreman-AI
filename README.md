@@ -119,6 +119,11 @@ Four Claude Code subagents, each with its own charter, playbook (skill) and **le
 
 ### 2. Control-room dashboard (`dashboard/index.html`)
 
+- **Talk to each agent:** click a robot (or **Chat** on a Crew card) to chat with that agent directly. It answers
+  as itself through Claude Code on the PC (`dashboard/prompts/agent-chat.md`, model `AIWF_CHAT_MODEL`, default
+  Sonnet), reads the team's files to answer about its work, and turns real work into a task, its own or a
+  teammate's, that starts right away. Conversations are kept per agent in `tasks/chats/`.
+
 A dark, glass-panel interface built as one HTML file with no framework.
 
 - **Neural core.** A real-time canvas rendering of a brain modelled from a side-view silhouette:
