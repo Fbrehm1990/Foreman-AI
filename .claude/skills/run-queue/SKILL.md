@@ -26,8 +26,10 @@ description: Process the task inbox unattended. Routes "Team decides" tasks thro
    Triage counts toward this run's 6 tasks only when it turned into a single task that ran.
 5. Work in batches of up to 3 tasks at a time. When a batch finishes, re-read the inbox and take the next
    batch, including steps the Manager split out of an owner task. Stop when the queue is empty or you've
-   finished **6 tasks** this run; anything left starts a new run at the next dispatch check. For each task:
-   - Mark it `[~]` in the inbox and save the file.
+   finished **6 tasks** this run; anything left starts a new run within seconds (the dashboard checks every 20 seconds).
+   Other runs may be working at the same time, each on its own tasks. For each task:
+   - Re-read `tasks/inbox.md` just before you claim it. If its line is already `[~]`, another run has it: skip it.
+     Otherwise mark it `[~]` and save the file at once, before any other work on it.
    - Hand it to the right team member: Agent tool with `subagent_type` from the team table in `CLAUDE.md`
      (`researcher`, `web-builder`, `marketer`, `manager`), giving the full task text, the skill to follow,
      and the instruction to follow `CLAUDE.md`. Independent tasks may run in parallel, but two

@@ -35,6 +35,10 @@ svg.i{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .spacer{flex:1}
 .hidden{display:none!important}
 .hint{color:var(--muted);font-size:12.5px}
+.as-line{display:flex;align-items:center;gap:8px;margin:12px 16px;padding:9px 12px;border-radius:10px;background:var(--accent-soft);font-size:13px;color:var(--text)}
+.as-line .dot{flex:none;--c:var(--accent)}
+.as-line.bad{display:block;background:var(--danger-soft);color:var(--danger)}
+.as-line code{background:rgba(0,0,0,.25);padding:1px 5px;border-radius:4px}
 
 /* ---------- shell: sidebar + main ---------- */
 .app{display:grid;grid-template-columns:var(--side) minmax(0,1fr);min-height:100vh}
@@ -1695,6 +1699,17 @@ const today = () => new Date().toLocaleDateString("en-CA");      // YYYY-MM-DD i
 const outLink = o => /^https?:\/\//.test(o) ? `<a href="${esc(o)}" target="_blank" rel="noopener">${esc(o)}</a>`
   : /^(outputs|logs)\//.test(o) ? `<button class="linky" data-view="${esc(o.split(/\s/)[0])}">${esc(o)}</button>` : esc(o);
 
+// Auto-start status: tasks begin as soon as they're added; say plainly when something stops that.
+function autoStartLine(waiting){
+  const d = S.dispatch || {}, runs = d.runs || 0;
+  if (d.state === "NO_CLI") return `<div class="as-line bad"><b>Tasks can't start on their own right now.</b> Claude Code isn't installed or signed in on this PC.
+    Open Command Prompt, run <code>claude</code> and sign in; waiting tasks then start within 20 seconds.</div>`;
+  if (d.state === "FAILED") return `<div class="as-line bad"><b>The last start didn't work</b> (${esc(d.why || "unknown error")}). Trying again every 2 minutes.</div>`;
+  const working = runs ? `${runs} run${runs > 1 ? "s" : ""} working` : "";
+  return `<div class="as-line"><span class="dot ${runs ? "working" : ""}"></span>${waiting
+    ? (runs ? `${working}. Waiting tasks start within seconds.` : "Starting now…")
+    : `Auto-start is on: new tasks begin within seconds${working ? ` · ${working}` : ""}.`}</div>`;
+}
 function renderPage(){
   if (!TASK_PAGES.includes(route) || editing !== null || retrying !== null) return;   // don't clobber an open form
   const card = $("#pageCard");
@@ -1703,6 +1718,7 @@ function renderPage(){
   if (route === "queued"){
     const q = S.tasks.filter(t => t.state === "queued").sort((a,b) => ORDER[a.priority]-ORDER[b.priority] || a.line-b.line);
     card.innerHTML = `<div class="card-h"><h2>Queue</h2><span class="count">${q.length ? `${q.length} task${q.length>1?"s":""}, in run order` : ""}</span></div>
+      ${autoStartLine(q.length)}
       <ul class="list">${q.length ? q.map((t,i) => {
         const up = i > 0 && q[i-1].priority === t.priority, down = i < q.length-1 && q[i+1].priority === t.priority;
         return `<li class="item" data-line="${t.line}">
@@ -1795,7 +1811,7 @@ $("#pageCard").addEventListener("click", async e => {
     }
     else if (act === "again"){
       if (!confirm("Add this task to the queue again?\n\n" + done.title)) return;
-      await api("/api/tasks", {type: TYPES[done.type] ? done.type : "research", priority:"normal", title:done.title}); toast("Added to queue");
+      await api("/api/tasks", {type: TYPES[done.type] ? done.type : "research", priority:"normal", title:done.title}); toast("Added. The team starts on it right away.");
     }
     else if (act === "dismiss"){ await api("/api/done/dismiss", {raw:done.raw}); toast("Dismissed"); }
     else if (act === "retry"){
@@ -3149,7 +3165,7 @@ $("#taskForm").addEventListener("submit", async e => {
     await api("/api/tasks", {type:currentType, priority:$("#priority").value, title, details:$("#details").value});
     $("#title").value = ""; $("#details").value = ""; $("#priority").value = "normal";
     currentType = "auto"; renderTypeSeg();
-    toast("Added to queue"); await load();
+    toast("Added. The team starts on it right away."); await load();
   }catch(err){ toast(err.message, true); }
   $("#addBtn").disabled = false;
 });

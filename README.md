@@ -298,7 +298,10 @@ sequenceDiagram
   Team-->>Server: progress.py steps + transcript feed (live on dashboard)
 ```
 - The process is fully detached, so it survives the dashboard closing.
-- If the CLI isn't installed or signed in, the 30-minute *Dispatch check* schedule falls back to the scheduled queue task.
+- Tasks start right away: the dashboard starts a run when you add a task and re-checks the queue every 20 seconds, so
+  work added while the team is busy gets its own run (up to 3 side by side, `AIWF_MAX_RUNS` to change). Tasks a crashed
+  run left `[~]` go back in the queue automatically.
+- If the CLI isn't installed or signed in, the Queue page says so and tasks wait for the scheduled queue task.
 
 ### Owner feedback loop
 **✎ Feedback** on any task, in a crew box or the project view, posts to `/api/feedback`:
