@@ -24,6 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import progress  # noqa: E402
 import server  # noqa: E402
 
 ROOT = server.ROOT
@@ -53,15 +54,14 @@ def _runs():
 
 
 def _other_run_active():
-    """A run not launched from here (e.g. the scheduled worker) that reported progress in the last 20 minutes."""
-    prog = server.read_status() or {}
-    run = prog.get("run") or {}
-    if not run or run.get("ended") or not prog.get("heartbeat"):
-        return False
+    """A run not launched from here (e.g. a manual or scheduled one) that hasn't ended, whose process is still
+    alive, and that reported progress in the last 20 minutes. Every run has its own record in status.json, so
+    another run calling `progress.py end` no longer hides one that is still working."""
     try:
-        return (datetime.now() - datetime.fromisoformat(prog["heartbeat"])).total_seconds() < 20 * 60
-    except ValueError:
-        return False
+        prog = json.loads(server.read(server.STATUS) or "null")
+    except json.JSONDecodeError:   # mid-write: assume someone is working and look again on the next check
+        return True
+    return any(progress.is_active(r, fresh_minutes=20) for r in progress.runs_of(prog).values())
 
 
 def recover():
